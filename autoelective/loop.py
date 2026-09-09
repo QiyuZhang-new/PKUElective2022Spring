@@ -64,7 +64,7 @@ reloginPool = Queue(maxsize=elective_client_pool_size)
 goals = environ.goals  # let N = len(goals);
 ignored = environ.ignored
 mutexes = np.zeros(0, dtype=np.uint8)  # uint8 [N][N];
-delays = np.zeros(0, dtype=np.int)  # int [N];
+delays = np.zeros(0, dtype=int)  # int [N];
 
 killedElective = ElectiveClient(-1)
 NO_DELAY = -1
@@ -96,6 +96,46 @@ def _add_error(e):
     name = clz.__name__
     key = "[%s] %s" % (e.code, name) if hasattr(clz, "code") else name
     environ.errors[key] += 1
+
+
+def _get_valid_captcha(elective, course):
+    """Return a validated captcha, or ignore the course after the retry cap."""
+    for attempt in range(1, RECOGNIZER_MAX_ATTEMPT + 1):
+        cout.info("Fetch a captcha (attempt %d/%d)" % (
+            attempt, RECOGNIZER_MAX_ATTEMPT
+        ))
+        response = elective.get_DrawServlet()
+
+        captcha = asyncRecognizer.recognize(response.content)
+        cout.info("Recognition result: %s" % captcha.code)
+
+        response = elective.get_Validate(username, captcha.code)
+        try:
+            result = response.json()["valid"]  # 可能会返回一个错误网页
+        except Exception as exc:
+            ferr.error(exc)
+            raise OperationFailedError(msg="Unable to validate captcha")
+
+        if result == "2":
+            cout.info("Validation passed")
+            return captcha
+        if result == "0":
+            cout.info("Validation failed")
+            cout.info("Auto error caching skipped for good")
+        else:
+            cout.warning("Unknown validation result: %s" % result)
+
+        if attempt < RECOGNIZER_MAX_ATTEMPT:
+            cout.info("Try again")
+
+    error = RecognizerError(
+        msg="Captcha validation failed after %d attempts; ignore %s for this run"
+        % (RECOGNIZER_MAX_ATTEMPT, course)
+    )
+    ferr.error(error)
+    _add_error(error)
+    _ignore_course(course, "Captcha retry limit reached")
+    return None
 
 
 def _format_timestamp(timestamp):
@@ -511,31 +551,9 @@ def run_elective_loop():
 
                 # validate captcha first
 
-                while True:
-
-                    cout.info("Fetch a captcha")
-                    r = elective.get_DrawServlet()
-
-                    captcha = asyncRecognizer.recognize(r.content)
-                    cout.info("Recognition result: %s" % captcha.code)
-
-                    r = elective.get_Validate(username, captcha.code)
-                    try:
-                        res = r.json()["valid"]  # 可能会返回一个错误网页
-                    except Exception as e:
-                        ferr.error(e)
-                        raise OperationFailedError(msg="Unable to validate captcha")
-
-                    if res == "2":
-                        cout.info("Validation passed")
-                        break
-                    elif res == "0":
-                        cout.info("Validation failed")
-                        # notify.send_wechat_push(msg=WECHAT_MSG[2], prefix=WECHAT_PREFIX[2])
-                        cout.info("Auto error caching skipped for good")
-                        cout.info("Try again")
-                    else:
-                        cout.warning("Unknown validation result: %s" % res)
+                captcha = _get_valid_captcha(elective, course)
+                if captcha is None:
+                    continue
 
                 ## try to elect
 

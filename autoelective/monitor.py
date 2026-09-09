@@ -4,7 +4,6 @@
 # modified: 2019-09-11
 
 import logging
-import werkzeug._internal as _werkzeug_internal
 from flask import Flask, current_app, jsonify
 from flask.logging import default_handler
 from .environ import Environ
@@ -20,8 +19,8 @@ monitor = Flask(__name__, static_folder=None) # disable static rule
 
 monitor.config["JSON_AS_ASCII"] = False
 monitor.config["JSON_SORT_KEYS"] = False
-
-_werkzeug_internal._logger = cout  # custom _logger for werkzeug
+monitor.json.ensure_ascii = False
+monitor.json.sort_keys = False
 
 monitor.logger.removeHandler(default_handler)
 for logger in [cout, ferr]:

@@ -78,6 +78,9 @@ __pycache__/
 *$py.class
 
 apikey.json
+config.ini
+cache/
+log/
 *.png
 
 # C extensions

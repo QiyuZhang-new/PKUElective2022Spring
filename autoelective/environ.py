@@ -12,6 +12,7 @@ class Environ(object, metaclass=Singleton):
 
     def __init__(self):
         self.config_ini = None
+        self.apikey_json = None
         self.with_monitor = None
         self.iaaa_loop = 0
         self.elective_loop = 0
