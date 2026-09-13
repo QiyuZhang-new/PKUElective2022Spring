@@ -38,7 +38,7 @@ is_dual_degree = config.is_dual_degree
 identity = config.identity
 refresh_interval = config.refresh_interval
 refresh_random_deviation = config.refresh_random_deviation
-supply_cancel_page = config.supply_cancel_page
+supply_cancel_pages = config.supply_cancel_pages
 iaaa_client_timeout = config.iaaa_client_timeout
 elective_client_timeout = config.elective_client_timeout
 login_loop_interval = config.login_loop_interval
@@ -48,7 +48,7 @@ is_print_mutex_rules = config.is_print_mutex_rules
 notify = Notify(_disable_push=config.disable_push, _token=config.wechat_token, _interval_lock=config.minimum_interval, _verbosity=config.verbosity)
 
 config.check_identify(identity)
-config.check_supply_cancel_page(supply_cancel_page)
+config.check_supply_cancel_pages(supply_cancel_pages)
 
 _USER_WEB_LOG_DIR = os.path.join(WEB_LOG_DIR, config.get_user_subpath())
 mkdir(_USER_WEB_LOG_DIR)
@@ -142,6 +142,36 @@ def _format_timestamp(timestamp):
     if timestamp == -1:
         return str(timestamp)
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
+
+
+def _get_supply_cancel_page(elective, page):
+    """Fetch and parse one supply/cancel page, initializing page state if needed."""
+    if page == 1:
+        cout.info("Get SupplyCancel page 1")
+        response = elective.get_SupplyCancel(username)
+        tables = get_tables(response._tree)
+        try:
+            return response, get_courses(tables[1]), get_courses_with_detail(tables[0])
+        except IndexError:
+            filename = "elective.get_SupplyCancel_%d.html" % int(time.time() * 1000)
+            _dump_respose_content(response.content, filename)
+            cout.info("Page dump to %s" % filename)
+            raise UnexceptedHTMLFormat
+
+    # A non-first page can be empty until SupplyCancel has initialized server state.
+    for attempt in range(1, 4):
+        cout.info("Get Supplement page %s" % page)
+        response = elective.get_supplement(username, page=page)
+        tables = get_tables(response._tree)
+        try:
+            return response, get_courses(tables[1]), get_courses_with_detail(tables[0])
+        except IndexError:
+            cout.warning("IndexError encountered")
+            if attempt < 3:
+                cout.info("Get SupplyCancel first to prevent empty table returned")
+                elective.get_SupplyCancel(username)
+
+    raise OperationFailedError(msg="unable to get normal Supplement page %s" % page)
 
 
 def _dump_respose_content(content, filename):
@@ -338,7 +368,7 @@ def run_elective_loop():
     cout.info("identity: %s" % identity)
     cout.info("refresh_interval: %s" % refresh_interval)
     cout.info("refresh_random_deviation: %s" % refresh_random_deviation)
-    cout.info("supply_cancel_page: %s" % supply_cancel_page)
+    cout.info("supply_cancel_pages: %s" % ",".join(map(str, supply_cancel_pages)))
     cout.info("iaaa_client_timeout: %s" % iaaa_client_timeout)
     cout.info("elective_client_timeout: %s" % elective_client_timeout)
     cout.info("login_loop_interval: %s" % login_loop_interval)
@@ -437,55 +467,24 @@ def run_elective_loop():
             ## check supply/cancel page
 
             page_r = None
+            elected = []
+            plans = []
+            seen_elected = set()
+            seen_plans = set()
+            plan_responses = {}
 
-            if supply_cancel_page == 1:
-
-                cout.info("Get SupplyCancel page %s" % supply_cancel_page)
-
-                r = page_r = elective.get_SupplyCancel(username)
-                tables = get_tables(r._tree)
-                try:
-                    elected = get_courses(tables[1])
-                    plans = get_courses_with_detail(tables[0])
-                except IndexError as e:
-                    filename = "elective.get_SupplyCancel_%d.html" % int(time.time() * 1000)
-                    _dump_respose_content(r.content, filename)
-                    cout.info("Page dump to %s" % filename)
-                    raise UnexceptedHTMLFormat
-
-            else:
-                #
-                # 刷新非第一页的课程，第一次请求会遇到返回空页面的情况
-                #
-                # 模拟方法：
-                # 1.先登录辅双，打开补退选第二页
-                # 2.再在同一浏览器登录主修
-                # 3.刷新辅双的补退选第二页可以看到
-                #
-                # -----------------------------------------------
-                #
-                # 引入 retry 逻辑以防止以为某些特殊原因无限重试
-                # 正常情况下一次就能成功，但是为了应对某些偶发错误，这里设为最多尝试 3 次
-                #
-                retry = 3
-                while True:
-                    if retry == 0:
-                        raise OperationFailedError(msg="unable to get normal Supplement page %s" % supply_cancel_page)
-
-                    cout.info("Get Supplement page %s" % supply_cancel_page)
-                    r = page_r = elective.get_supplement(username, page=supply_cancel_page)  # 双学位第二页
-                    tables = get_tables(r._tree)
-                    try:
-                        elected = get_courses(tables[1])
-                        plans = get_courses_with_detail(tables[0])
-                    except IndexError as e:
-                        cout.warning("IndexError encountered")
-                        cout.info("Get SupplyCancel first to prevent empty table returned")
-                        _ = elective.get_SupplyCancel(username)  # 遇到空页面时请求一次补退选主页，之后就可以不断刷新
-                    else:
-                        break
-                    finally:
-                        retry -= 1
+            for page in supply_cancel_pages:
+                response, page_elected, page_plans = _get_supply_cancel_page(elective, page)
+                page_r = response
+                for selected_course in page_elected:
+                    if selected_course not in seen_elected:
+                        seen_elected.add(selected_course)
+                        elected.append(selected_course)
+                for planned_course in page_plans:
+                    if planned_course not in seen_plans:
+                        seen_plans.add(planned_course)
+                        plans.append(planned_course)
+                        plan_responses[planned_course] = response
 
             ## check available courses
 
@@ -531,6 +530,7 @@ def run_elective_loop():
             while len(tasks) > 0:
 
                 ix, course = tasks.popleft()
+                page_r = plan_responses.get(course, page_r)
 
                 is_mutex = False
 

@@ -96,7 +96,7 @@ def validate_configuration():
 
     config = AutoElectiveConfig()
     config.check_identify(config.identity)
-    config.check_supply_cancel_page(config.supply_cancel_page)
+    config.check_supply_cancel_pages(config.supply_cancel_pages)
 
     if not config.iaaa_id.strip() or config.iaaa_id.upper().endswith('_HERE'):
         raise ValueError('student_id has not been configured')

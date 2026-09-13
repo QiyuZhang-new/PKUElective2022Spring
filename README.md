@@ -89,7 +89,7 @@ threshold = 10
 - `refresh_interval`：每轮刷新后的基础等待秒数，默认 8。
 - `random_deviation`：随机偏移比例；`0.2` 表示实际间隔在基础值上下 20% 浮动。
 - `elective_client_pool_size`：并行登录会话数，代码限制为 1–5；建议保持 1 或 2。
-- `supply_cancel_page`：目标课程所在的补退选计划页码，从 1 开始。
+- `supply_cancel_pages`：目标课程所在的补退选计划页码；跨页时用逗号分隔，例如 `1,2`。旧的 `supply_cancel_page` 单页配置仍兼容。
 - `debug_print_request` / `debug_dump_request`：仅排错时开启，日志可能含敏感信息。
 
 微信推送默认关闭。旧代码使用 `sre24.com`，该服务的当前可用性未在本项目中保证：
@@ -157,7 +157,7 @@ python main.py --with-monitor
 ## 5. 常见问题
 
 - `Configuration error`：根据提示修改 `config.ini` 或 `apikey.json`，再运行 `--check-config`。
-- 提示课程不在选课计划：核对课程名、班号、开课单位以及 `supply_cancel_page`。
+- 提示课程不在选课计划：核对课程名、班号、开课单位以及 `supply_cancel_pages`。
 - 登录持续失败：先在浏览器验证 IAAA 密码，并确认选课系统当前仍兼容本项目的旧接口。
 - 验证码识别失败：检查 TT 识图账号余额、识别类型和网络；第三方官方文档建议超时设为 60 秒。
 - 学校页面结构变化导致 `[104] unable to parse HTML content`：这通常不是本地配置问题，而是旧解析器与当前页面不兼容。

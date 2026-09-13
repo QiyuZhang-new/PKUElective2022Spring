@@ -102,59 +102,50 @@ def main():
             % (response.status_code, get_title(response._tree) or "(no title)")
         )
 
-        stage = "supply/cancel page"
-        if config.supply_cancel_page == 1:
-            response = elective.get_SupplyCancel(config.iaaa_id)
-        else:
-            elective.get_SupplyCancel(config.iaaa_id)
-            response = elective.get_supplement(
-                config.iaaa_id, page=config.supply_cancel_page
-            )
-        tables = get_tables(response._tree)
-        if len(tables) < 2:
-            print("FAILED supply/cancel page: parser found fewer than two course tables")
-            return 1
-        selected = get_courses(tables[1])
-        planned = get_courses_with_detail(tables[0])
-        print(
-            "OK  supply/cancel page: HTTP %s, parser found %d planned and %d selected course(s)"
-            % (response.status_code, len(planned), len(selected))
-        )
-
-        pages = {config.supply_cancel_page: planned}
+        requested_pages = list(config.supply_cancel_pages)
         if args.scan_pages > 0:
-            signatures = {
-                tuple((course.name, course.class_no, course.school) for course in planned)
-            }
             for page in range(1, args.scan_pages + 1):
-                if page == config.supply_cancel_page:
-                    continue
-                time.sleep(1)
-                stage = "supply/cancel page %d" % page
-                try:
-                    if page == 1:
-                        page_response = elective.get_SupplyCancel(config.iaaa_id)
-                    else:
-                        page_response = elective.get_supplement(config.iaaa_id, page=page)
-                    page_tables = get_tables(page_response._tree)
-                    if len(page_tables) < 2:
-                        break
-                    page_courses = get_courses_with_detail(page_tables[0])
-                except AutoElectiveException:
-                    break
+                if page not in requested_pages:
+                    requested_pages.append(page)
 
-                signature = tuple(
-                    (course.name, course.class_no, course.school) for course in page_courses
-                )
-                if not signature or signature in signatures:
-                    break
-                signatures.add(signature)
-                pages[page] = page_courses
-                print("OK  supply/cancel page %d: parser found %d planned course(s)" % (
-                    page, len(page_courses)
-                ))
-                if len(page_courses) < 20:
-                    break
+        # Fetch page 1 first because the server uses it to initialize later pages.
+        requested_pages.sort()
+        pages = {}
+        selected = []
+        seen_selected = set()
+        signatures = set()
+        for index, page in enumerate(requested_pages):
+            if index:
+                time.sleep(1)
+            stage = "supply/cancel page %d" % page
+            if page == 1:
+                page_response = elective.get_SupplyCancel(config.iaaa_id)
+            else:
+                if 1 not in pages:
+                    elective.get_SupplyCancel(config.iaaa_id)
+                page_response = elective.get_supplement(config.iaaa_id, page=page)
+
+            page_tables = get_tables(page_response._tree)
+            if len(page_tables) < 2:
+                print("FAILED page %d: parser found fewer than two course tables" % page)
+                return 1
+            page_selected = get_courses(page_tables[1])
+            page_courses = get_courses_with_detail(page_tables[0])
+            signature = tuple(
+                (course.name, course.class_no, course.school) for course in page_courses
+            )
+            if not signature or signature in signatures:
+                continue
+            signatures.add(signature)
+            pages[page] = page_courses
+            for selected_course in page_selected:
+                if selected_course not in seen_selected:
+                    seen_selected.add(selected_course)
+                    selected.append(selected_course)
+            print(
+                "OK  supply/cancel page %d: HTTP %s, parser found %d planned course(s)"
+                % (page, page_response.status_code, len(page_courses))
+            )
 
         missing = False
         for course_id, target in config.courses.items():

@@ -103,7 +103,22 @@ class AutoElectiveConfig(BaseConfig, metaclass=Singleton):
 
     @property
     def supply_cancel_page(self):
-        return self.getint("client", "supply_cancel_page")
+        """Backward-compatible access to the first configured page."""
+        return self.supply_cancel_pages[0]
+
+    @property
+    def supply_cancel_pages(self):
+        if self._config.has_option("client", "supply_cancel_pages"):
+            raw_pages = self.getlist("client", "supply_cancel_pages")
+        else:
+            raw_pages = [self.get("client", "supply_cancel_page")]
+
+        pages = []
+        for raw_page in raw_pages:
+            page = int(raw_page)
+            if page not in pages:
+                pages.append(page)
+        return tuple(pages)
 
     @property
     def refresh_interval(self):
@@ -226,6 +241,12 @@ class AutoElectiveConfig(BaseConfig, metaclass=Singleton):
     def check_supply_cancel_page(self, page):
         if page <= 0:
             raise ValueError("supply_cancel_page must be positive number, not %s" % page)
+
+    def check_supply_cancel_pages(self, pages):
+        if not pages:
+            raise ValueError("supply_cancel_pages must contain at least one page")
+        for page in pages:
+            self.check_supply_cancel_page(page)
 
     def get_user_subpath(self):
         if self.is_dual_degree:

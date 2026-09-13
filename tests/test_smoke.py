@@ -36,7 +36,7 @@ dual_degree = false
 identity = bzx
 
 [client]
-supply_cancel_page = 1
+supply_cancel_pages = 1,2
 refresh_interval = 8
 random_deviation = 0.2
 iaaa_client_timeout = 30
@@ -103,6 +103,7 @@ school = 测试学院
                         "env.config_ini = r'%s'; "
                         "env.apikey_json = r'%s'; "
                         "import autoelective.loop, autoelective.monitor; "
+                        "assert autoelective.loop.supply_cancel_pages == (1, 2); "
                         "print('runtime imports OK')"
                     ) % (config_path, apikey_path),
                 ],
