@@ -1,0 +1,7 @@
+interface:
+  display_name: "PKU Autoelective Runner"
+  short_description: "Safely set up and run this PKU elective project"
+  default_prompt: "Use $pku-autoelective-runner to configure this cloned repository, validate it, and explain how to run it safely."
+
+policy:
+  allow_implicit_invocation: true
